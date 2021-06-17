@@ -154,7 +154,7 @@ class WindowsDataset(BaseDataset):
 		else:
 			raise ValueError('Shape of windows.get_data() is not 3D')
 
-		df = self.windows.metadata
+		# df = self.windows.metadata
 		unique_targets = np.unique(self.y)
 		classwise_covs = dict()
 		for target in unique_targets:
