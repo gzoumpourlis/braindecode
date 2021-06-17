@@ -16,6 +16,7 @@ import numpy as np
 from numpy.lib.shape_base import apply_along_axis
 import pandas as pd
 
+from scipy.linalg import pinv, sqrtm
 
 class Preprocessor(object):
     """Preprocessor for an MNE Raw or Epochs object.
@@ -362,3 +363,39 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         raw.reorder_channels(chs_by_freq_band)
     if drop_original_signals:
         raw.drop_channels(original_ch_names)
+
+def covariance_align(data):
+    """Covariance align continuous or windowed data in-place.
+
+    Parameters
+    ----------
+    data: np.ndarray (n_channels, n_times) or (n_windows, n_channels, n_times)
+        continuous or windowed signal
+
+    Returns
+    -------
+    aligned: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        aligned continuous or windowed data
+
+    ..note:
+        If this function is supposed to preprocess continuous data, it should be
+        given to raw.apply_function().
+    """
+
+    aligned = data.copy()
+    if len(data.shape)==3:
+        for i_window in range(aligned.shape[0]):
+            covar = np.cov(aligned[i_window])
+            proj = pinv(sqrtm(covar))
+            aligned[i_window] = np.matmul(proj, aligned[i_window])
+    elif len(data.shape)==2:
+        covar = np.cov(aligned)
+        proj = pinv(sqrtm(covar))
+        aligned = np.matmul(proj, aligned)
+
+    # TODO: the overriding of protected '_data' should be implemented in the
+    # TODO: dataset when transforms are applied to windows
+    if hasattr(data, '_data'):
+        data._data = aligned
+    return aligned
