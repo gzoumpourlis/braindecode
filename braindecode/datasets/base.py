@@ -181,14 +181,20 @@ class WindowsDataset(BaseDataset):
 		distances = np.zeros(data.shape[0])
 		for i_window in range(data.shape[0]):
 			trial_cov = trialwise_covs[i_window]
-			
 			distances[i_window] = distance_riemann(trial_cov, global_cov)
-
 			# covar_target = classwise_covs[self.y[i_window]]
 			# distances[i_window] = distance_riemann(covar_trial, covar_target)
+		# print('Min: {:.3f} | Max: {:.3f}'.format(np.min(distances), np.max(distances)))
 
-		distances = 0.5 * (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 0.00001)
-		self.trialwise_weights = 0.5 + 1 - distances
+		alpha = 1.0
+		beta = 0.5
+
+		# self.trialwise_weights = np.ones(data.shape[0])
+
+		distances = (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 0.00001)
+		# beta==0 | range = [0, alpha]
+		# beta!=0 | range = [beta, alpha+beta]
+		self.trialwise_weights = beta + alpha*(1 - distances)
 
 class BaseConcatDataset(ConcatDataset):
 	"""A base class for concatenated datasets. Holds either mne.Raw or

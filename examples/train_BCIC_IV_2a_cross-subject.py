@@ -65,6 +65,7 @@ def train(subject_id):
 		Preprocessor('resample', sfreq=125),
 		Preprocessor(covariance_align),
 
+
 		## Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
 		## factor_new=factor_new, init_block_size=init_block_size)
 		## Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
