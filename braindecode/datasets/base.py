@@ -117,6 +117,7 @@ class WindowsDataset(BaseDataset):
 		self.crop_inds = self.windows.metadata.loc[
 			:, ['i_window_in_trial', 'i_start_in_trial',
 				'i_stop_in_trial']].to_numpy()
+		self.sample_weight_list = list()
 
 	def __getitem__(self, index):
 		X = self.windows.get_data(item=index)[0].astype('float32')
@@ -126,6 +127,9 @@ class WindowsDataset(BaseDataset):
 		# necessary to cast as list to get list of three tensors from batch,
 		# otherwise get single 2d-tensor...
 		crop_inds = self.crop_inds[index].tolist()
+		######################
+		self.sample_weight_list.append( self.trialwise_weights[index] )
+		######################
 		return X, y, crop_inds
 
 	def __len__(self):
@@ -144,17 +148,19 @@ class WindowsDataset(BaseDataset):
 	def compute_covariances(self):
 		import numpy as np
 		from pyriemann.utils.mean import mean_riemann
+		from pyriemann.utils.distance import distance_riemann
 		data = self.windows.get_data()
 		if len(data.shape)==3:
 			trialwise_covs_list = list()
 			for i_window in range(data.shape[0]):
-				covar = np.cov(data[i_window])
-				trialwise_covs_list.append(covar)
+				trial_cov = np.cov(data[i_window])
+				trialwise_covs_list.append(trial_cov)
 			trialwise_covs = np.array(trialwise_covs_list)
 		else:
 			raise ValueError('Shape of windows.get_data() is not 3D')
 
-		# df = self.windows.metadata
+		global_cov = mean_riemann(trialwise_covs, tol=1e-08, maxiter=50, init=None, sample_weight=None)
+
 		unique_targets = np.unique(self.y)
 		classwise_covs = dict()
 		for target in unique_targets:
@@ -170,6 +176,19 @@ class WindowsDataset(BaseDataset):
 			classwise_covs[target] = riemann_mean_cov
 		self.trialwise_covs = trialwise_covs
 		self.classwise_covs = classwise_covs
+		self.global_cov = global_cov
+
+		distances = np.zeros(data.shape[0])
+		for i_window in range(data.shape[0]):
+			trial_cov = trialwise_covs[i_window]
+			
+			distances[i_window] = distance_riemann(trial_cov, global_cov)
+
+			# covar_target = classwise_covs[self.y[i_window]]
+			# distances[i_window] = distance_riemann(covar_trial, covar_target)
+
+		distances = 0.5 * (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 0.00001)
+		self.trialwise_weights = 0.5 + 1 - distances
 
 class BaseConcatDataset(ConcatDataset):
 	"""A base class for concatenated datasets. Holds either mne.Raw or
@@ -188,6 +207,7 @@ class BaseConcatDataset(ConcatDataset):
 		super().__init__(list_of_ds)
 		self.description = pd.DataFrame([ds.description for ds in list_of_ds])
 		self.description.reset_index(inplace=True, drop=True)
+		self.sample_weight_list = list()
 
 	def split(self, by=None, property=None, split_ids=None):
 		"""Split the dataset based on information listed in its description

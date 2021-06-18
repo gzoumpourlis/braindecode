@@ -1,3 +1,12 @@
+import sys
+
+sys.path.insert(0, '/run/media/george/purple_data/codes/git_repos/skorch')
+import skorch
+
+sys.path.insert(0, '/run/media/george/purple_data/codes/git_repos/braindecode')
+
+from braindecode.datasets.base import WindowsDataset
+
 from braindecode.datasets.moabb import MOABBDataset
 
 from braindecode.datautil.preprocess import (exponential_moving_standardize, covariance_align, preprocess, Preprocessor)
@@ -11,7 +20,7 @@ from braindecode.models import * #ShallowFBCSPNet, EEGNetv1
 
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
-from braindecode import EEGClassifier
+from braindecode import EEGClassifier, EEGClassifier_weighted
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -22,6 +31,10 @@ mne.set_log_level(False)
 import moabb
 moabb.set_log_level(False)
 
+# import sys
+# sys.path.insert(0, '/run/media/george/purple_data/codes/git_repos/skorch')
+# import skorch
+
 ######################################################################
 
 def train(subject_id):
@@ -30,7 +43,7 @@ def train(subject_id):
 	print('Training on BCI_IV_2a dataset | Cross-subject | ID: {:02d}\n'.format(subject_id))
 
 	##### subject_range = [subject_id]
-	subject_range = [x for x in range(1, 4)]
+	subject_range = [x for x in range(1, 10)]
 
 	dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=subject_range)
 
@@ -50,7 +63,7 @@ def train(subject_id):
 		Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
 		#Preprocessor('set_eeg_reference', ref_channels='average', ch_type='eeg'),
 		Preprocessor('resample', sfreq=125),
-		# Preprocessor(covariance_align),
+		Preprocessor(covariance_align),
 
 		## Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
 		## factor_new=factor_new, init_block_size=init_block_size)
@@ -92,6 +105,17 @@ def train(subject_id):
 	# print(windows_dataset.datasets[0].windows)
 
 	######################################################################
+	# Merge multiple datasets into a single WindowDataset
+	# metadata_all = [ds.windows.metadata for ds in windows_dataset.datasets]
+	# metadata_full = pd.concat(metadata_all)
+
+	"""
+	epochs_all = [ds.windows for ds in windows_dataset.datasets]
+	epochs_full = mne.concatenate_epochs(epochs_all)
+	full_dataset = WindowsDataset(windows=epochs_full, description=None, transform=None)
+	windows_dataset = full_dataset
+	"""
+	######################################################################
 	# Split dataset into train and valid
 
 	# keep only session 1:
@@ -109,6 +133,16 @@ def train(subject_id):
 	train_set = splitted['0']
 	valid_set = splitted['1']
 
+	#######
+
+	epochs_all = [ds.windows for ds in train_set.datasets]
+	epochs_full = mne.concatenate_epochs(epochs_all)
+	trialwise_weights_all = [ds.trialwise_weights for ds in train_set.datasets]
+	trialwise_weights_full = np.hstack(trialwise_weights_all)
+	full_dataset = WindowsDataset(windows=epochs_full, description=None, transform=None)
+	full_dataset.trialwise_weights = trialwise_weights_full
+	train_set = full_dataset
+	# print(train_set.windows.metadata)
 	######################################################################
 	# Create model
 
@@ -188,10 +222,11 @@ def train(subject_id):
 	# lr = 1 * 0.01
 	# weight_decay = 0.5 * 0.001
 
-	batch_size = 96
-	n_epochs = 40
+	batch_size = 64
+	n_epochs = 100
 
-	clf = EEGClassifier(
+	# clf = EEGClassifier(
+	clf = EEGClassifier_weighted(
 		model,
 		criterion=torch.nn.NLLLoss,
 		optimizer=torch.optim.SGD, #AdamW,
